@@ -1,0 +1,158 @@
+{
+  "info": {
+    "name": "User and Posts API - QA Assessment",
+    "description": "Run in order. Shared tests are implemented only in the collection-level post-response script. Uses JSONPlaceholder public test API.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01 - Get users and select user",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/users",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "users"
+          ]
+        }
+      }
+    },
+    {
+      "name": "02 - Get posts for selected user",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/posts?userId={{userId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "posts"
+          ],
+          "query": [
+            {
+              "key": "userId",
+              "value": "{{userId}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "03 - Get missing post",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/posts/{{missingPostId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "posts",
+            "{{missingPostId}}"
+          ]
+        }
+      }
+    }
+  ],
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const requestName = pm.info.requestName;",
+          "const expectedStatuses = {",
+          "    '01 - Get users and select user': 200,",
+          "    '02 - Get posts for selected user': 200,",
+          "    '03 - Get missing post': 404",
+          "};",
+          "",
+          "const nonEmptyString = { type: 'string', minLength: 1, pattern: '\\\\S' };",
+          "const positiveId = { type: 'integer', minimum: 1 };",
+          "const userSchema = {",
+          "    type: 'object',",
+          "    required: ['id', 'name', 'username', 'email'],",
+          "    properties: {",
+          "        id: positiveId,",
+          "        name: nonEmptyString,",
+          "        username: nonEmptyString,",
+          "        email: { type: 'string', minLength: 3, pattern: '^[^\\\\s@]+@[^\\\\s@]+\\\\.[^\\\\s@]+$' }",
+          "    }",
+          "};",
+          "const postSchema = {",
+          "    type: 'object',",
+          "    required: ['userId', 'id', 'title', 'body'],",
+          "    properties: {",
+          "        userId: positiveId,",
+          "        id: positiveId,",
+          "        title: nonEmptyString,",
+          "        body: nonEmptyString",
+          "    }",
+          "};",
+          "",
+          "pm.test('Expected HTTP status', function () {",
+          "    pm.expect(expectedStatuses, 'Unrecognized request name').to.have.property(requestName);",
+          "    pm.response.to.have.status(expectedStatuses[requestName]);",
+          "});",
+          "",
+          "// Stop response-specific validation when the HTTP status is wrong.",
+          "if (pm.response.code === expectedStatuses[requestName]) {",
+          "    if (requestName === '01 - Get users and select user' || requestName === '02 - Get posts for selected user') {",
+          "        let data;",
+          "        pm.test('Response is valid JSON array', function () {",
+          "            data = pm.response.json();",
+          "            pm.expect(data).to.be.an('array').that.is.not.empty;",
+          "        });",
+          "",
+          "        if (Array.isArray(data) && data.length > 0) {",
+          "            const itemSchema = requestName === '01 - Get users and select user' ? userSchema : postSchema;",
+          "            const arraySchema = { type: 'array', minItems: 1, items: itemSchema };",
+          "            pm.test('Every array item matches required JSON schema', function () {",
+          "                pm.response.to.have.jsonSchema(arraySchema);",
+          "            });",
+          "",
+          "            if (requestName === '01 - Get users and select user') {",
+          "                // Set only when a suitable user exists; selection is independent of fixed IDs.",
+          "                const selected = data.find(u => Number.isInteger(u.id) && u.id > 0);",
+          "                pm.test('A valid user is available for downstream requests', function () {",
+          "                    pm.expect(selected, 'No valid user ID found').to.exist;",
+          "                });",
+          "                if (selected) pm.collectionVariables.set('userId', String(selected.id));",
+          "            } else {",
+          "                const selectedUserId = Number(pm.collectionVariables.get('userId'));",
+          "                pm.test('Selected user ID exists and is valid', function () {",
+          "                    pm.expect(Number.isInteger(selectedUserId) && selectedUserId > 0).to.equal(true);",
+          "                });",
+          "                pm.test('Every post belongs to the selected user', function () {",
+          "                    pm.expect(data.every(post => post.userId === selectedUserId)).to.equal(true);",
+          "                });",
+          "            }",
+          "        }",
+          "    } else if (requestName === '03 - Get missing post') {",
+          "        pm.test('Missing post response is not a populated post', function () {",
+          "            const body = pm.response.text().trim();",
+          "            pm.expect(body === '' || body === '{}' || body === 'null').to.equal(true);",
+          "        });",
+          "    }",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "missingPostId",
+      "value": "99999999",
+      "type": "string"
+    }
+  ]
+}
