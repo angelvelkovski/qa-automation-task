@@ -1,0 +1,79 @@
+# QA Automation Task: Playwright + TypeScript
+
+UI tests for https://www.saucedemo.com and API tests for https://jsonplaceholder.typicode.com.
+
+## Setup
+
+Requirements: Node 20+ (and Java 11+ only if you want the Allure report).
+
+```bash
+npm install
+npx playwright install chromium
+```
+
+`.env` is created from `.env.example` automatically on the first `npm test`
+(or run `cp .env.example .env`). It holds base URLs, the public demo credentials and the tax rate.
+
+## Run
+
+| Goal | Command |
+| --- | --- |
+| Whole suite | `npm test` |
+| UI tests only | `npm run test:ui` |
+| API tests only | `npm run test:api` |
+| One file | `npx playwright test tests/ui/checkout.spec.ts` |
+| One test by title | `npx playwright test -g "item total"` |
+| One user / project | `npx playwright test --project=ui-problem` |
+| See the browser | `npx playwright test --headed --workers=1` |
+| Slow motion | `SLOWMO=800 npx playwright test --headed --workers=1 --project=ui-standard` |
+| Debug / UI mode | `npx playwright test --ui` |
+| Type check | `npm run typecheck` |
+
+Running a UI project automatically runs the `setup` project first (it logs in and saves the session).
+
+## Reports
+
+- **Playwright HTML report**: `npm run report`
+- **Allure report** (grouped by epic/feature, with step timeline and descriptions): run the tests, then `npm run allure`
+  (`allure:generate` builds it, `allure:open` serves it).
+
+`ui-problem` is **expected to show as failed (✘)** in the list output. That is the known defect, not a broken suite (see below).
+The overall result still counts as passed.
+
+## Project layout
+
+```
+tests/        specs only (ui/, api/, setup/auth.setup.ts)
+src/pages/        page objects (one per screen) + BasePage
+src/components/   reusable pieces (header, line items, order summary)
+src/api/          typed clients (BaseApiClient, Users, Posts) + schemas/
+src/fixtures/     wires pages and clients into tests
+src/test-data/    users, products, data builders, known defects
+src/utils/        money math, schema validation, auth paths, report metadata
+src/config/env.ts the only place that reads process.env
+```
+
+## Design decisions
+
+1. **Layers:** specs contain no selectors and no URLs. Pages and components own locators (`data-test` attributes via `getByTestId`); typed API clients own URLs and requests; fixtures wire both into tests.
+2. **Auth once:** a `setup` project logs in per user and saves `storageState`; UI projects depend on it, so tests start logged in and stay independent and parallel-safe.
+3. **Config:** base URLs, credentials and tax rate come from `.env` through one typed `env` module. Nothing is hardcoded in code or `playwright.config.ts`.
+4. **Expected values are computed**, not hardcoded: item prices are read from the page, then item total, tax and total are calculated in integer cents (`utils/money`) and compared with the overview.
+5. **problem_user (known defect):** the same test runs for both users. For problem_user it is marked `test.fail` with a description. It stays visible in the report as an expected failure instead of being skipped or deleted, and turns red the day the defect is fixed, so the marker gets removed. (Its checkout form drops the last name, so it never reaches the overview.)
+6. **Non-persisting POST:** jsonplaceholder acknowledges a POST (201 and an id) but stores nothing, so the follow-up GET returns 404. The tests assert the create contract, and the read-back asserts 404 by default, switchable via `API_PERSISTS_DATA=true` for a real backend. The test documents the behaviour instead of pretending persistence exists.
+7. **Contract test:** `GET /users/{id}` is validated against a JSON schema (Ajv), not field by field.
+8. **No hard waits:** Playwright auto-waiting only. The app is a SPA (URL changes before the DOM re-renders), so components look rows up by product name instead of counting rows. A 5s `actionTimeout` makes a missing element fail fast as an ordinary error, which `test.fail` can recognise.
+9. **Deliberately skipped:** CI workflow, data-driven login tests, tags, API-seeded cart. They are not required, and each would add code without adding evidence for the required scenarios.
+10. **At 500 tests / five engineers:** group specs by feature folder, add a lint/format check and CI sharding, move test data creation to API calls, add Allure history, and put a CODEOWNERS file on `src/pages` and `src/api`.
+
+## Assumptions
+
+- The saucedemo demo accounts (`standard_user`, `problem_user`) and the 8% sales tax are public and stable; tax is configurable via `TAX_RATE`.
+- "Two items" means Sauce Labs Backpack and Sauce Labs Bike Light.
+- Rounding: tax is rounded to the nearest cent, as the site displays it.
+- Tests run on Chromium only.
+- jsonplaceholder returns 201 for POST and 404 for a post that was never really stored.
+
+## Not finished
+
+- **Part 2 (Postman collection) and Part 3 (SQL queries)** are not done yet: `/postman` and `/sql/queries.sql` are still to be added.
